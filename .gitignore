@@ -144,3 +144,4 @@ yq3
 .gocache/
 .rsworktree/
 .vercel
+.pnpm-store

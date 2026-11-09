@@ -46,7 +46,7 @@
         <h2>Privacy by design</h2>
         <p>
           The local editor workflow is designed to process documents in the browser. Read the
-          <a href="/privacy">privacy policy</a> for the product's data and account boundaries.
+          <a href="/privacy">privacy policy</a> for the product's data-handling boundaries.
         </p>
       </section>
     </main>

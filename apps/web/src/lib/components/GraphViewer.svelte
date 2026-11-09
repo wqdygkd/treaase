@@ -2,7 +2,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { RuntimeStateEventDetail } from '../runtime-loading';
-  import type { UsageBlock } from '../billing/entitlement-gate';
   import type { PathSeg } from '../store/tree-path';
   import GraphViewRuntime from './GraphViewRuntime.svelte';
 
@@ -19,7 +18,6 @@
   export let enableRevealSync = true;
   export let synchronizedRuntimeLoading = false;
   export let readonly = false;
-  export let onEntitlementBlocked: (block: UsageBlock) => void = () => {};
 
   const dispatch = createEventDispatcher<{ reveal: unknown; 'runtime-state': RuntimeStateEventDetail }>();
   let runtime: GraphViewRuntime | null = null;
@@ -59,9 +57,6 @@
     runtime?.zoomOut();
   }
 
-  export function showEntitlementOverlay(block: UsageBlock): void {
-    runtime?.showEntitlementOverlay(block);
-  }
 </script>
 
 <GraphViewRuntime
@@ -69,7 +64,6 @@
   {enableRevealSync}
   {synchronizedRuntimeLoading}
   {readonly}
-  {onEntitlementBlocked}
   on:reveal={(event) => dispatch('reveal', event.detail)}
   on:runtime-state={(event) => dispatch('runtime-state', event.detail)}
 />

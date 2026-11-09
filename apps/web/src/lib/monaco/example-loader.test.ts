@@ -21,7 +21,9 @@ describe('example-loader', () => {
     if (!expected) continue;
 
     it(`loads ${expected} example from ${fileName}`, () => {
-      expect(examplesByLanguage.get(expected)).toBe(String(content ?? ''));
+      const canonical = String(content ?? '').replace(/\r\n?/g, '\n');
+      expect(examplesByLanguage.get(expected)).toBe(canonical);
+      expect(examplesByLanguage.get(expected)).not.toContain('\r');
     });
   }
 });

@@ -26,7 +26,8 @@ function buildExamplesMap(): ExampleLoadResult {
     if (!languageId) continue;
     if (examples.has(languageId)) continue;
     if (typeof content !== 'string') continue;
-    examples.set(languageId, content);
+    // Git autocrlf makes raw examples CRLF on Windows; Core's canonical source text is LF.
+    examples.set(languageId, content.replace(/\r\n?/g, '\n'));
   }
 
   return examples;

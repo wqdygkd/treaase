@@ -68,12 +68,8 @@ export type WorkspaceHost = {
   saveSession(session: WorkspaceSession): Promise<void>;
   loadSession(): Promise<WorkspaceSession | null>;
   onCommand(onCommand: (command: WorkspaceCommand) => void): Promise<() => void>;
-  storeRefreshToken(refreshToken: string): Promise<void>;
-  hasRefreshToken(): Promise<boolean>;
-  refreshSession(supabaseUrl: string, anonKey: string): Promise<{ accessToken: string; refreshToken: string }>;
   checkForUpdate(): Promise<{ version: string } | null>;
   installCheckedUpdate(): Promise<void>;
-  clearRefreshToken(): Promise<void>;
   openExternal(url: URL): Promise<void>;
   getInitialDeepLinks(): Promise<URL[]>;
   onDeepLinks(onUrls: (urls: URL[]) => void): Promise<() => void>;
@@ -91,19 +87,6 @@ export function parseEditorDeepLinks(values: readonly string[]): URL[] {
     try {
       const url = new URL(value);
       return url.protocol === 'treease:' && url.hostname === 'editor' ? [url] : [];
-    } catch {
-      return [];
-    }
-  });
-}
-
-export function parseDesktopDeepLinks(values: readonly string[]): URL[] {
-  return values.flatMap((value) => {
-    try {
-      const url = new URL(value);
-      const isEditor = url.protocol === 'treease:' && url.hostname === 'editor';
-      const isAuthCallback = url.protocol === 'treease:' && url.hostname === 'auth' && url.pathname === '/callback';
-      return isEditor || isAuthCallback ? [url] : [];
     } catch {
       return [];
     }

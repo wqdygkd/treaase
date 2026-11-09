@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBindgen } from './wasm-bindgen.mjs';
+import { startDevServer } from './dev-vite.mjs';
 import { computeWasmFingerprint } from './wasm-fingerprint.mjs';
 
 const copyOnly = process.argv.includes('--copy-only');
@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(here, '..');
 const rootDir = path.resolve(webDir, '..', '..');
 const coreDir = path.resolve(rootDir, 'packages', 'core');
-const rustWasmOut = path.resolve(coreDir, 'target', 'wasm32-unknown-unknown', 'release', 'treease_core.wasm');
+const rustWasmOut = path.resolve(rootDir, 'target', 'wasm32-unknown-unknown', 'release', 'treease_core.wasm');
 const watchDirs = [
   path.resolve(coreDir, 'src'),
   path.resolve(coreDir, 'Cargo.toml'),
@@ -92,19 +92,11 @@ async function writeVersionModuleIfChanged(target, contents) {
   await writeFile(target, contents, 'utf8');
 }
 
-function startVite(version) {
-  return spawn('pnpm', ['dev:vite'], {
-    cwd: webDir,
-    stdio: 'inherit',
-    env: { ...process.env, WASM_VERSION: version, TREEASE_WASM_IMPL: 'rust' }
-  });
-}
-
-function restartVite(version) {
+function restartVite() {
   if (vite) {
     vite.kill('SIGTERM');
   }
-  vite = startVite(version);
+  vite = startDevServer();
 }
 
 async function buildQueued() {
@@ -123,7 +115,7 @@ async function buildQueued() {
     if (version && version !== currentVersion) {
       currentVersion = version;
       if (vite) {
-        restartVite(currentVersion);
+        restartVite();
       }
     }
   } catch (err) {
@@ -167,7 +159,7 @@ async function main() {
   if (copyOnly) return;
   startWatch();
   if (currentVersion) {
-    vite = startVite(currentVersion);
+    vite = startDevServer();
   }
   const shutdown = () => {
     if (vite) {

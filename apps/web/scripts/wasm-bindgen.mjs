@@ -25,13 +25,38 @@ const packageOutputs = generatedOutputs.slice(1);
 
 export const watchedFiles = generatedOutputs;
 
+function findLlvmAr() {
+  const sysroot = execFileSync('rustc', ['--print', 'sysroot'], { cwd: coreDir, encoding: 'utf8' }).trim();
+  const rustlib = path.resolve(sysroot, 'lib', 'rustlib');
+  for (const host of fs.readdirSync(rustlib)) {
+    const candidate = path.join(rustlib, host, 'bin', 'llvm-ar.exe');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error('llvm-ar not found; run: rustup component add llvm-tools');
+}
+
+function windowsWasmBuildEnv() {
+  if (process.platform !== 'win32') return {};
+  const ccWrapper = path.resolve(rootDir, 'scripts', 'zig-wasm32-cc.cmd');
+  if (!fs.existsSync(ccWrapper)) return {};
+
+  return {
+    CC_wasm32_unknown_unknown: `cmd /c ${ccWrapper.replaceAll('\\', '/')}`,
+    // cc-rs probes the cmd-wrapped compiler as GNU and omits --target; pin the triple ourselves.
+    CFLAGS_wasm32_unknown_unknown: '--target=wasm32-wasi',
+    AR_wasm32_unknown_unknown: findLlvmAr(),
+  };
+}
+
 export function runBindgen({ optimize = true } = {}) {
   const { coreName, coreVersion } = loadCoreReleaseMetadata(rootDir);
+  const buildEnv = { ...process.env, ...windowsWasmBuildEnv() };
 
   // 1. Generate TS types from Rust document protocol
   execFileSync('cargo', ['run', '--locked', '--bin', 'export_document_protocol'], {
     cwd: coreDir,
-    stdio: 'inherit'
+    stdio: 'inherit',
+    env: buildEnv
   });
 
   // Keep wasm-pack's transient core_bg.* files out of the package Vite imports.
@@ -40,7 +65,8 @@ export function runBindgen({ optimize = true } = {}) {
   fs.rmSync(wasmBuildDir, { recursive: true, force: true });
   execFileSync('wasm-pack', ['build', '.', '--target', 'web', '--out-dir', 'wasm/.pkg-bindgen', '--out-name', 'core'], {
     cwd: coreDir,
-    stdio: 'inherit'
+    stdio: 'inherit',
+    env: buildEnv
   });
 
   // 3. Optimize core_bg.wasm ourselves; wasm-pack's built-in wasm-opt invocation

@@ -74,9 +74,6 @@ tap as the `HOMEBREW_TAP_TOKEN` GitHub Actions secret.
 ## Repository Boundary
 
 This repository contains the public Web, Desktop, CLI, Core, and protocol packages.
-The hosted API implementation for accounts, billing, sharing, AI, usage, and file
-storage is maintained separately and is consumed over the documented HTTPS API
-boundary.
 
 ## License
 
@@ -95,26 +92,13 @@ and pull request expectations.
 
 Each app owns its environment configuration. Copy the relevant `.env.example`
 to `.env.local` for local development; keep `.env.local` untracked and never
-put service credentials in `apps/web` configuration. Web tests may use the committed
-`apps/web/.env.test` defaults, with private overrides in `.env.test.local`.
-
-The Web API origin is configured with `PUBLIC_API_ORIGIN`; it identifies the
-separately deployable API and is not a credential.
-
-Production service values belong in the private service repository's deployment
-platform variables and secrets, not in this repository's `.env` files.
+put service credentials in `apps/web` configuration.
 
 ### Repository Layout
 
 - `apps/web/`: Svelte web application, editor UI, graph UI, and browser worker boundary.
 - `apps/cli/`: standalone CLI crate, acceptance tests, and CLI metadata export.
 - `packages/core/`: Rust parser, formatter, operators, evaluation, graph build, snapshots, and WASM exports.
-- `packages/api-contracts/`: public HTTP request/response schemas shared by Web and the separately deployable service.
-- `packages/share-protocol/`: public serialized share-resource schema.
-
-The hosted API is a separately deployable service configured through
-`PUBLIC_API_ORIGIN`; its implementation and operational configuration are not part
-of this repository.
 
 ### Common Commands
 

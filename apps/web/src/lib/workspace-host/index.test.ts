@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkspaceHost, parseDesktopDeepLinks, parseEditorDeepLinks } from './index';
+import { createWorkspaceHost, parseEditorDeepLinks } from './index';
 
 describe('workspace host boundary', () => {
   it('exposes file lifecycle operations only through the desktop host', async () => {
@@ -14,14 +14,8 @@ describe('workspace host boundary', () => {
     expect(host.getInitialDeepLinks).toBeTypeOf('function');
   });
 
-  it('keeps only editor deep links at the shared-host boundary', () => {
-    expect(parseEditorDeepLinks(['treease://editor?lang=json', 'treease://auth/callback', 'https://treease.com/editor'])).toEqual([
-      new URL('treease://editor?lang=json'),
-    ]);
-  });
-
-  it('accepts only editor presets and the explicit auth callback desktop routes', () => {
-    expect(parseDesktopDeepLinks([
+  it('accepts only editor deep links', () => {
+    expect(parseEditorDeepLinks([
       'treease://editor?lang=json',
       'treease://auth/callback?code=one-time-code',
       'treease://auth/other',
@@ -29,7 +23,6 @@ describe('workspace host boundary', () => {
       'https://treease.com/editor',
     ])).toEqual([
       new URL('treease://editor?lang=json'),
-      new URL('treease://auth/callback?code=one-time-code'),
     ]);
   });
 });

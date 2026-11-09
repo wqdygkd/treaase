@@ -1,49 +1,13 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
-  import { assetUrl, r2Assets } from '$lib/assets';
+  import { assetUrl, assetPaths } from '$lib/assets';
   import HomeHeroDemoDeck from '$lib/components/HomeHeroDemoDeck.svelte';
-  import PricingPlanGrid from '$lib/components/PricingPlanGrid.svelte';
   import SiteFooter from '$lib/components/SiteFooter.svelte';
   import SiteHeader from '$lib/components/SiteHeader.svelte';
-  import LoginDialog from '$lib/components/LoginDialog.svelte';
-  import {
-    openPreparedBillingCheckout,
-    prewarmBillingCheckout,
-    startBillingCheckout,
-    type PreparedBillingCheckout,
-  } from '$lib/billing/checkout-flow';
-  import { authReady, authUser } from '$lib/auth/auth-user-store';
-  import {
-    pricingConfig,
-    type BillingPriceId,
-  } from '$lib/config/pricing';
   import { homeHeaderNavItems } from '$lib/navigation/home-header-nav';
-  import { trackEvent, trackSeoConversion } from '$lib/analytics/ga4';
-  import { toast } from 'svelte-sonner';
   import SeoHead from '$lib/components/SeoHead.svelte';
-  import { signOut } from '$lib/auth/supabase-auth';
-  import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
-  import {
-    changeBillingPlan,
-    createBillingPortalLink,
-    type BillingPricingPrewarm,
-  } from '$lib/services/treease-server';
+  import { serializeJsonLd, siteOrigin, socialLinks } from '$lib/seo/site-seo';
 
   let cliInstallExpanded = false;
-  let checkoutBusy = false;
-  let loginOpen = false;
-  let pricingPrewarmKey: string | null = null;
-  let pricingPrewarm: Promise<BillingPricingPrewarm> | null = null;
-  let checkoutPreparations: Partial<Record<BillingPriceId, Promise<PreparedBillingCheckout>>> = {};
-  let currentSubscription: BillingPricingPrewarm['subscription'] = null;
-  let billingPlanPrices: BillingPricingPrewarm['plans'] = [];
-  let subscriptionLookupState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
-  let planChangeBusy: BillingPriceId | null = null;
-  let planChangeNotice: string | null = null;
-  let scheduledPlanChange: BillingPriceId | null = null;
-  let planChangeDialogOpen = false;
-  let pendingPlanChange: { priceId: BillingPriceId; plan: typeof pricingConfig.plans[number] } | null = null;
-  import { serializeJsonLd, siteOrigin, socialLinks } from '$lib/seo/site-seo';
   const pageTitle = 'Treease: JSON, YAML & Structured Text Viewer with Graphs';
   const pageDescription =
     'View, format, compare, and edit JSON, YAML, TOML, CSV, and embedded payloads in a private browser workspace with graph and source views.';
@@ -62,229 +26,6 @@
       sameAs: [socialLinks.github, 'https://crates.io/crates/treease-cli', socialLinks.x, socialLinks.discord],
     },
   });
-
-  function checkoutReturnUrl() {
-    return { successUrl: new URL('/editor', window.location.origin).toString() };
-  }
-
-  function startPricingPrewarm(): void {
-    const key = $authUser?.id ?? 'anonymous';
-    if (pricingPrewarmKey === key) return;
-
-    pricingPrewarmKey = key;
-    checkoutPreparations = {};
-    currentSubscription = null;
-    billingPlanPrices = [];
-    subscriptionLookupState = 'loading';
-    planChangeNotice = null;
-    scheduledPlanChange = null;
-    const prewarm = prewarmBillingCheckout(checkoutReturnUrl());
-    pricingPrewarm = prewarm;
-    void prewarm.then((result) => {
-      if (pricingPrewarm !== prewarm) return;
-      currentSubscription = result.subscription;
-      billingPlanPrices = result.plans;
-      subscriptionLookupState = 'ready';
-      checkoutPreparations = Object.fromEntries(
-        (result.checkouts ?? []).map((checkout) => [
-          checkout.priceId,
-          Promise.resolve({ priceId: checkout.priceId, checkoutUrl: checkout.url }),
-        ]),
-      );
-    }).catch(() => {
-      if (pricingPrewarm !== prewarm) return;
-      subscriptionLookupState = 'error';
-      billingPlanPrices = [];
-      pricingPrewarm = null;
-    });
-  }
-
-  $: if (browser) {
-    const authKey = $authUser?.id ?? 'anonymous';
-    if ($authReady && pricingPrewarmKey !== authKey) startPricingPrewarm();
-  }
-
-  async function handleLogout(): Promise<void> {
-    try {
-      await signOut();
-      toast.success('You are now logged out.');
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      toast.error(`Logout failed: ${message}`);
-    }
-  }
-
-  async function startCheckout(priceId: 'monthly' | 'yearly'): Promise<void> {
-    checkoutBusy = true;
-    try {
-      const preparation = checkoutPreparations[priceId];
-      let outcome;
-      try {
-        let prepared: PreparedBillingCheckout | null = preparation ? await preparation : null;
-        if (!prepared) {
-          const checkout = (await pricingPrewarm)?.checkouts?.find((entry) => entry.priceId === priceId);
-          prepared = checkout ? { priceId: checkout.priceId, checkoutUrl: checkout.url } : null;
-        }
-        outcome = prepared
-          ? await openPreparedBillingCheckout(prepared)
-          : await startBillingCheckout(priceId, checkoutReturnUrl());
-      } catch {
-        outcome = await startBillingCheckout(priceId, checkoutReturnUrl());
-      }
-      if (outcome.status === 'login-required') {
-        loginOpen = true;
-        return;
-      }
-      if (outcome.status === 'failed') toast.error(outcome.message);
-    } finally {
-      checkoutBusy = false;
-    }
-  }
-
-  function currentPlanIsPaid(subscription = currentSubscription): boolean {
-    if (!subscription || subscription.tier !== 'pro') return false;
-    if (subscription.currentPeriodEnd) return Date.parse(subscription.currentPeriodEnd) > Date.now();
-    return subscription.status === 'active';
-  }
-
-  function billingNeedsManagement(subscription = currentSubscription): boolean {
-    if (!subscription?.billingManagementAvailable) return false;
-    if (subscription.currentPeriodEnd && Date.parse(subscription.currentPeriodEnd) <= Date.now()) return false;
-    return subscription.status === 'past_due'
-      || subscription.status === 'canceled'
-      || (subscription.status === 'inactive' && subscription.tier === 'free');
-  }
-
-  function planActionLabel(
-    plan: typeof pricingConfig.plans[number],
-    subscription: BillingPricingPrewarm['subscription'],
-    lookupState: typeof subscriptionLookupState,
-    busyPriceId: BillingPriceId | null,
-    scheduledPriceId: BillingPriceId | null,
-  ): string {
-    if (!plan.billingPriceId) return plan.ctaLabel;
-    if (busyPriceId === plan.billingPriceId) return 'Updating plan…';
-    if (billingNeedsManagement(subscription)) return 'Manage billing';
-    if (lookupState !== 'ready' || !currentPlanIsPaid(subscription)) return plan.ctaLabel;
-    if (scheduledPriceId === plan.billingPriceId) return 'Scheduled';
-    if (subscription?.billingCadence === plan.billingPriceId) return 'Current plan';
-    if (subscription?.status === 'past_due') return 'Manage billing';
-    return 'Change plan';
-  }
-
-  function formatPlanPrice(priceId: BillingPriceId): string {
-    const price = billingPlanPrices.find((entry) => entry.priceId === priceId);
-    if (price) {
-      const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: price.currency }).format(price.amount / 100);
-      const interval = price.intervalCount === 1 ? price.interval : `${price.intervalCount} ${price.interval}s`;
-      return `${amount} / ${interval}`;
-    }
-
-    const plan = pricingConfig.plans.find((entry) => entry.billingPriceId === priceId);
-    return `${plan?.price ?? 'Price unavailable'} ${plan?.cadence ?? ''}`.trim();
-  }
-
-  function formatRenewalDate(subscription = currentSubscription): string {
-    return subscription?.currentPeriodEnd
-      ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(subscription.currentPeriodEnd))
-      : 'your next renewal';
-  }
-
-  function formatTodayDate(): string {
-    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date());
-  }
-
-  function planChangeChargesImmediately(priceId: BillingPriceId, subscription = currentSubscription): boolean {
-    return subscription?.billingCadence === 'monthly' && priceId === 'yearly';
-  }
-
-  function planActionTooltip(
-    plan: typeof pricingConfig.plans[number],
-    subscription: BillingPricingPrewarm['subscription'],
-    lookupState: typeof subscriptionLookupState,
-    scheduledPriceId: BillingPriceId | null,
-  ): string | null {
-    const label = planActionLabel(plan, subscription, lookupState, null, scheduledPriceId);
-    if (label === 'Scheduled' && plan.billingPriceId) {
-      return `Scheduled: switches to ${plan.name} on ${formatRenewalDate(subscription)}. Next charge: ${formatPlanPrice(plan.billingPriceId)}.`;
-    }
-    if (label === 'Current plan') {
-      return `Current plan: Pro ${subscription?.billingCadence ?? 'monthly'} · access through ${formatRenewalDate(subscription)}`;
-    }
-    if (label !== 'Change plan' || !plan.billingPriceId) return null;
-
-    const timing = planChangeChargesImmediately(plan.billingPriceId, subscription)
-      ? 'A prorated payment is required today.'
-      : `Starts at your next renewal on ${formatRenewalDate(subscription)}.`;
-    return `Switch to ${plan.name}. ${timing} Next charge: ${formatPlanPrice(plan.billingPriceId)}.`;
-  }
-
-  function openPlanChangeDialog(priceId: BillingPriceId): void {
-    const plan = pricingConfig.plans.find((entry) => entry.billingPriceId === priceId);
-    if (!plan) return;
-    pendingPlanChange = { priceId, plan };
-    planChangeDialogOpen = true;
-  }
-
-  async function openBillingPortal(): Promise<void> {
-    try {
-      const { url } = await createBillingPortalLink();
-      window.location.assign(url);
-    } catch {
-      toast.error('Unable to open plan management. Please try again later.');
-    }
-  }
-
-  async function handlePlanAction(priceId: BillingPriceId): Promise<void> {
-    if (planChangeBusy || checkoutBusy) return;
-
-    if (billingNeedsManagement()) {
-      await openBillingPortal();
-      return;
-    }
-
-    if (!currentPlanIsPaid()) {
-      await startCheckout(priceId);
-      return;
-    }
-
-    if (currentSubscription?.billingCadence === priceId) return;
-    if (currentSubscription?.status === 'past_due' || currentSubscription?.status === 'canceled') {
-      await openBillingPortal();
-      return;
-    }
-
-    openPlanChangeDialog(priceId);
-  }
-
-  async function confirmPlanChange(): Promise<void> {
-    const pending = pendingPlanChange;
-    if (!pending || planChangeBusy || checkoutBusy) return;
-
-    const { priceId } = pending;
-    const cadenceLabel = priceId === 'yearly' ? 'yearly' : 'monthly';
-    planChangeDialogOpen = false;
-    planChangeBusy = priceId;
-    try {
-      await changeBillingPlan(priceId);
-      if (planChangeChargesImmediately(priceId)) {
-        currentSubscription = currentSubscription
-          ? { ...currentSubscription, billingCadence: priceId }
-          : currentSubscription;
-        scheduledPlanChange = null;
-        planChangeNotice = `Pro ${cadenceLabel} is active after the prorated payment is processed.`;
-      } else {
-        scheduledPlanChange = priceId;
-        planChangeNotice = `Pro ${cadenceLabel} will start at your next renewal on ${formatRenewalDate()}.`;
-      }
-      toast.success(planChangeNotice);
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Unable to update your plan.');
-    } finally {
-      planChangeBusy = null;
-      pendingPlanChange = null;
-    }
-  }
 
   const valuePoints = [
     'Open a local file and see its structure without leaving the source.',
@@ -332,14 +73,14 @@
   <link
     rel="preload"
     as="image"
-    href={assetUrl(r2Assets.heroDemoGraphPoster)}
+    href={assetUrl(assetPaths.heroDemoGraphPoster)}
     fetchpriority="high"
   />
 </svelte:head>
 
 <div class="landing">
   <div class="landing-shell">
-    <SiteHeader navItems={[...homeHeaderNavItems]} onLogin={() => (loginOpen = true)} onLogout={handleLogout} />
+    <SiteHeader navItems={[...homeHeaderNavItems]} />
 
     <main class="landing-main" id="main-content" tabindex="-1" aria-labelledby="hero-title">
       <section class="hero">
@@ -356,7 +97,6 @@
               <a
                 class="primary-cta"
                 href="/editor"
-                on:click={() => trackSeoConversion('editor_open', { source: 'landing' })}
               >Open Editor</a>
               <button
                 type="button"
@@ -429,7 +169,7 @@
             </div>
             <div class="story-media story-media--contain">
               <img
-                src={assetUrl(r2Assets.landingFeatureImport)}
+                src={assetUrl(assetPaths.landingFeatureImport)}
                 alt="Importing a YAML file into the Treease editor."
                 loading="lazy"
               />
@@ -446,7 +186,7 @@
             </div>
             <div class="story-media">
               <img
-                src={assetUrl(r2Assets.landingFeatureFormat)}
+                src={assetUrl(assetPaths.landingFeatureFormat)}
                 alt="Sorting JSON keys from the command search inside Treease."
                 loading="lazy"
               />
@@ -464,7 +204,7 @@
             </div>
             <div class="story-media story-media--dark story-media--contain story-media--wide-short">
               <img
-                src={assetUrl(r2Assets.landingFeatureContainer)}
+                src={assetUrl(assetPaths.landingFeatureContainer)}
                 alt="Isolating an embedded JSON payload from mixed log text in Treease."
                 loading="lazy"
               />
@@ -481,7 +221,7 @@
             </div>
             <div class="story-media story-media--contain story-media--wide-short">
               <img
-                src={assetUrl(r2Assets.landingFeatureReveal)}
+                src={assetUrl(assetPaths.landingFeatureReveal)}
                 alt="Tracing a selected field through tree path breadcrumbs in Treease."
                 loading="lazy"
               />
@@ -547,8 +287,8 @@
             </div>
             <div class="ship-media ship-media--dark">
               <video
-                src={assetUrl(r2Assets.workflowProgressVideo)}
-                poster={assetUrl(r2Assets.workflowProgressPoster)}
+                src={assetUrl(assetPaths.workflowProgressVideo)}
+                poster={assetUrl(assetPaths.workflowProgressPoster)}
                 autoplay
                 muted
                 loop
@@ -569,7 +309,7 @@
             </div>
             <div class="ship-media ship-media--contain">
               <img
-                src={assetUrl(r2Assets.workflowExport)}
+                src={assetUrl(assetPaths.workflowExport)}
                 alt="Previewing converted YAML output before export in Treease."
                 loading="lazy"
               />
@@ -586,18 +326,6 @@
             </div>
           </article>
         </div>
-      </section>
-
-      <section id="pricing">
-        <PricingPlanGrid
-          actionLabel={(plan) => planActionLabel(plan, currentSubscription, subscriptionLookupState, planChangeBusy, scheduledPlanChange)}
-          actionTooltip={(plan) => planActionTooltip(plan, currentSubscription, subscriptionLookupState, scheduledPlanChange)}
-          actionDisabled={(plan) => checkoutBusy || planChangeBusy !== null || scheduledPlanChange === plan.billingPriceId || (subscriptionLookupState === 'ready' && currentSubscription?.billingCadence === plan.billingPriceId && currentPlanIsPaid() && !billingNeedsManagement())}
-          onSelectPlan={(priceId) => void handlePlanAction(priceId)}
-        />
-        {#if planChangeNotice}
-          <p class="pricing-change-notice" role="status">{planChangeNotice}</p>
-        {/if}
       </section>
 
       <section class="faq-section" id="faq" aria-labelledby="faq-title">
@@ -633,64 +361,6 @@
 
     <SiteFooter />
   </div>
-  {#if pendingPlanChange}
-    <Dialog bind:open={planChangeDialogOpen}>
-      <DialogContent aria-labelledby="plan-change-dialog-title" aria-describedby="plan-change-dialog-description" data-testid="plan-change-dialog" class="plan-change-dialog">
-        <DialogHeader>
-          <DialogTitle id="plan-change-dialog-title">Change your billing plan?</DialogTitle>
-          <DialogDescription id="plan-change-dialog-description">
-            Your Pro access stays active. The new billing plan starts at your next renewal.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div class="plan-change-summary">
-          <div class="plan-change-summary__row">
-            <span>Current plan</span>
-            <strong>Pro {currentSubscription?.billingCadence ?? 'monthly'}</strong>
-          </div>
-          <div class="plan-change-summary__arrow" aria-hidden="true">↓</div>
-          <div class="plan-change-summary__row">
-            <span>New plan</span>
-            <strong>{pendingPlanChange.plan.name}</strong>
-          </div>
-          <div class="plan-change-summary__row">
-            <span>Next renewal</span>
-            <strong>
-              {planChangeChargesImmediately(pendingPlanChange.priceId) ? formatTodayDate() : formatRenewalDate()}
-            </strong>
-          </div>
-          {#if planChangeChargesImmediately(pendingPlanChange.priceId)}
-            <div class="plan-change-summary__row">
-              <span>Payment today</span>
-              <strong>Prorated amount</strong>
-            </div>
-          {/if}
-          <div class="plan-change-summary__row">
-            <span>Next charge</span>
-            <strong>{formatPlanPrice(pendingPlanChange.priceId)}</strong>
-          </div>
-        </div>
-
-        <p class="plan-change-dialog__note">
-          {#if planChangeChargesImmediately(pendingPlanChange.priceId)}
-            Your saved payment method will be charged the prorated difference today. The plan change takes effect after payment succeeds.
-          {:else}
-            There is no charge today. Your current plan remains active until the renewal date above, then the new plan price will apply.
-          {/if}
-        </p>
-
-        <div class="plan-change-dialog__actions">
-          <button type="button" class="plan-change-dialog__cancel" on:click={() => (planChangeDialogOpen = false)}>
-            Keep current plan
-          </button>
-          <button type="button" class="plan-change-dialog__confirm" disabled={planChangeBusy !== null} on:click={confirmPlanChange}>
-            {planChangeChargesImmediately(pendingPlanChange.priceId) ? 'Confirm and pay' : 'Confirm change'}
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  {/if}
-  <LoginDialog bind:open={loginOpen} />
 </div>
 
 <style>
@@ -1202,108 +872,6 @@
   .workflow-story__card--export .ship-media {
     min-height: 244px;
     background: linear-gradient(180deg, #ffffff 0%, #f2f6fd 100%);
-  }
-
-  .pricing-change-notice {
-    margin: 18px auto 0;
-    max-width: 720px;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.6;
-    text-align: center;
-  }
-
-  :global(.plan-change-dialog) {
-    max-width: 440px;
-    gap: 20px;
-    border-color: #dce5f0;
-    background: #ffffff;
-    color: #10192a;
-  }
-
-  :global(.plan-change-summary) {
-    display: grid;
-    gap: 11px;
-    padding: 16px;
-    border: 1px solid #dce5f0;
-    border-radius: 14px;
-    background: #f0f4fa;
-  }
-
-  :global(.plan-change-summary__row) {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 20px;
-    color: #536273;
-    font-size: 13px;
-  }
-
-  :global(.plan-change-summary__row strong) {
-    color: #10192a;
-    font-size: 14px;
-    text-align: right;
-  }
-
-  :global(.plan-change-summary__arrow) {
-    color: #1745b5;
-    font-size: 18px;
-    line-height: 1;
-    text-align: center;
-  }
-
-  :global(.plan-change-dialog__note) {
-    margin: 0;
-    color: #536273;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-
-  :global(.plan-change-dialog__actions) {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-  }
-
-  :global(.plan-change-dialog__cancel),
-  :global(.plan-change-dialog__confirm) {
-    min-height: 40px;
-    padding: 0 16px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 800;
-    transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
-  }
-
-  :global(.plan-change-dialog__cancel) {
-    border: 1px solid #dce5f0;
-    color: #536273;
-    background: transparent;
-  }
-
-  :global(.plan-change-dialog__confirm) {
-    border: 1px solid #1745b5;
-    color: #ffffff;
-    background: #1745b5;
-  }
-
-  :global(.plan-change-dialog__cancel:hover),
-  :global(.plan-change-dialog__confirm:not(:disabled):hover) {
-    transform: translateY(-1px);
-  }
-
-  :global(.plan-change-dialog__cancel:hover) {
-    border-color: #2d63e2;
-    background: #f0f4fa;
-  }
-
-  :global(.plan-change-dialog__confirm:not(:disabled):hover) {
-    background: #2d63e2;
-  }
-
-  :global(.plan-change-dialog__confirm:disabled) {
-    cursor: default;
-    opacity: 0.65;
   }
 
   .faq-list {

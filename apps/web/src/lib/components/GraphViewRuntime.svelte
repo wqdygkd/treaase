@@ -1,6 +1,6 @@
 <!-- Responsibility: own the Leafer lifecycle, controller assembly, cross-boundary orchestration, and DOM template. -->
 <script lang="ts">
-  import { onDestroy, onMount, tick, createEventDispatcher } from 'svelte';
+  import { onDestroy, tick, createEventDispatcher } from 'svelte';
   import { cubicOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
   import { X } from 'lucide-svelte';
@@ -106,11 +106,6 @@
   import { isDocumentRevisionGuardCurrent } from '../guards/document-revision-guard';
   import { clearGraphSelectionForFullEdit } from './GraphViewer.graph-highlight';
   import {
-    refreshUsageGate,
-    runPostpaidCapability,
-    type UsageBlock,
-  } from '../billing/entitlement-gate';
-  import {
     clearGraphBridge,
     installGraphBridge,
     replaceGraphStreamState,
@@ -141,7 +136,6 @@
   export let enableRevealSync = true;
   export let synchronizedRuntimeLoading = false;
   export let readonly = false;
-  export let onEntitlementBlocked: (block: UsageBlock) => void = () => {};
 
   const MINIMAP_WIDTH = 220;
   const MINIMAP_HEIGHT = 150;
@@ -502,14 +496,6 @@
     emitEditorMutation,
     updateActiveTempModel: (updater) => activeTempModel.update(updater),
     dispatchGraphEditEvent: (type, detail) => dispatchGraphEditEvent(container, type, detail),
-    runBidirectionalEdit: async (documentKey, execute) => runPostpaidCapability({
-      capability: 'bidirectional_edit',
-      idempotencyKey: documentKey,
-      metadata: { surface: 'graph_cell' },
-      surface: 'graph_edit',
-      execute,
-      onBlocked: onEntitlementBlocked,
-    }),
     handleError,
   });
   const hasActiveEdit = graphEditAdapter.hasActiveEdit;
@@ -1063,14 +1049,6 @@
   export function zoomOut() {
     applyZoom(1 / 1.1);
   }
-
-  export function showEntitlementOverlay(block: UsageBlock): void {
-    onEntitlementBlocked(block);
-  }
-
-  onMount(() => {
-    void refreshUsageGate();
-  });
 
   onDestroy(() => {
     graphReadinessWaiters.forEach((waiter) => {

@@ -1,7 +1,6 @@
 import type * as Monaco from 'monaco-editor';
 import { toast } from 'svelte-sonner';
 import type { SupportedEditorLanguageId } from '../../monaco/language-support';
-import { trackEvent } from '../../analytics/ga4';
 
 type FormatCommandKind = 'format' | 'minify' | 'compact' | 'sort';
 
@@ -30,13 +29,11 @@ export function createEditorFormatController(options: CreateEditorFormatControll
     const activeModel = options.getModel();
     if (!activeModel) {
       toast.info('No active editor');
-      trackEvent('format_document', { operation: kind, result: 'failure' });
       return;
     }
     const text = activeModel.getValue();
     if (!text.trim()) {
       toast.info('No content to process');
-      trackEvent('format_document', { operation: kind, language: options.getLanguageId(), result: 'failure' });
       return;
     }
     const label = formatCommandLabels[kind];
@@ -55,18 +52,14 @@ export function createEditorFormatController(options: CreateEditorFormatControll
       }
       if (typeof nextText === 'string' && nextText !== text) {
         toast.success(`${label} completed`, { id: toastId });
-        trackEvent('format_document', { operation: kind, language: options.getLanguageId(), result: 'success' });
       } else if (typeof nextText === 'string') {
         toast.info(`${label} completed (no changes)`, { id: toastId });
-        trackEvent('format_document', { operation: kind, language: options.getLanguageId(), result: 'success' });
       } else {
         toast.error(`${label} returned unexpected result`, { id: toastId });
-        trackEvent('format_document', { operation: kind, language: options.getLanguageId(), result: 'failure' });
       }
     } catch (error) {
       toast.error(`${label} failed`, { id: toastId });
       console.error('[editor] format command failed', error);
-      trackEvent('format_document', { operation: kind, language: options.getLanguageId(), result: 'failure' });
     }
   }
 

@@ -66,22 +66,12 @@ export const browserWorkspaceHost: WorkspaceHost = {
   async onCommand() {
     return () => {};
   },
-  async storeRefreshToken() {
-    throw new WorkspaceHostUnavailableError('Desktop credential storage');
-  },
-  async hasRefreshToken() {
-    return false;
-  },
-  async refreshSession() {
-    throw new WorkspaceHostUnavailableError('Desktop credential refresh');
-  },
   async checkForUpdate() {
     return null;
   },
   async installCheckedUpdate() {
     throw new WorkspaceHostUnavailableError('Desktop updater');
   },
-  async clearRefreshToken() {},
   async openExternal(url) {
     window.open(url, '_blank', 'noopener,noreferrer');
   },

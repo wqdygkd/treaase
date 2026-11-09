@@ -22,7 +22,6 @@ async function waitForGraphSnapshot(page: Page): Promise<void> {
 
 test('full-edit source writeback does not cancel the newer graph render job across 10 runs', async ({ page, context }, testInfo) => {
   test.setTimeout(180_000);
-  testInfo.annotations.push({ type: 'allow-browser-error', description: 'http://localhost:3000/v1/usage' });
   testInfo.annotations.push({ type: 'allow-browser-error', description: 'googleads.g.doubleclick.net' });
 
   const pasteText = JSON.stringify({

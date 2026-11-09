@@ -125,9 +125,6 @@ describe('graph-value-edit', () => {
       throw new Error(`unexpected worker call: ${type}`);
     });
 
-    const runBidirectionalEditMock = vi.fn();
-    const runBidirectionalEdit = runBidirectionalEditMock as unknown as <T>(documentKey: string, execute: () => Promise<T>) => Promise<T>;
-    runBidirectionalEditMock.mockImplementation((_documentKey, execute) => execute());
     const model = { getVersionId: () => 1 };
     const controller = createGraphValueEditController({
       getCurrentData: () => ({ name: 'current' }),
@@ -144,13 +141,10 @@ describe('graph-value-edit', () => {
       emitEditorMutation: vi.fn(),
       updateActiveTempModel: vi.fn(),
       dispatchGraphEditEvent: vi.fn(),
-      runBidirectionalEdit,
       handleError: vi.fn(),
     });
 
     await expect(controller.applyGraphEdit({ path: [{ key: 'name' }], valueType: 'string' } as any, 'value', 'next-value')).resolves.toBe(true);
-
-    expect(runBidirectionalEditMock).toHaveBeenCalledWith('foo.json:1', expect.any(Function));
   });
 
   it('treats string value edits as snapshot-bound parsed replacements', async () => {

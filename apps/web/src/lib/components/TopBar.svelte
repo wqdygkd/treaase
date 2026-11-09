@@ -2,20 +2,18 @@
   import { onMount } from 'svelte'
   import { cubicOut } from 'svelte/easing'
   import { fly } from 'svelte/transition'
-  import { Plus, X, Upload, Download, BookOpen, MessageCircle, Share2, ArrowRight } from 'lucide-svelte'
-  import { trackEvent } from '../analytics/ga4'
+  import { Plus, X, Upload, Download, BookOpen, ArrowRight } from 'lucide-svelte'
   import { languageId as languageIdStore } from '../store/document-session-store'
-  import AccountMenu from './AccountMenu.svelte'
+  import AppMenu from './AppMenu.svelte'
   import * as Select from './ui/select'
   import * as ButtonGroup from './ui/button-group'
   import { Button, IconButton } from './ui/button'
   import type { SupportedEditorLanguageId } from '../monaco/language-support'
-  import { assetUrl, r2Assets } from '$lib/assets'
+  import { assetUrl, assetPaths } from '$lib/assets'
 
   export let tabs: Array<{ id: string; name: string; languageId: SupportedEditorLanguageId; dirty?: boolean }> = []
   export let activeTabId = ''
   export let showTabDirty = false
-  export let canAddTab = true
   export let showTabs = true
   export let showRightActions = true
   export let onAddTab: () => void = () => {}
@@ -26,11 +24,7 @@
   export let onImportFileStream: (payload: { file: File; sourceFormat: string; targetFormat: string; fileName: string }) => void = () => {}
   export let onExportPreview: (format: string) => void = () => {}
   export let onExportDownload: (format: string) => void = () => {}
-  export let onShare: () => void = () => {}
-  export let onFeedback: () => void = () => {}
   export let onOpenSettings: () => void = () => {}
-  export let onLogin: () => void = () => {}
-  export let onLogout: () => Promise<void> = async () => {}
   export let onCheckForUpdates: () => Promise<void> = async () => {}
 
   let importOpen = false
@@ -124,7 +118,7 @@
     data-testid="topbar-home-link"
     href="/"
   >
-    <img class="h-6 w-6 object-contain" src={assetUrl(r2Assets.treeaseLogo)} alt="Treease logo" />
+    <img class="h-6 w-6 object-contain" src={assetUrl(assetPaths.treeaseLogo)} alt="Treease logo" />
   </a>
   <ButtonGroup.Root variant="segmented-outline" class="min-w-0">
     <IconButton aria-label="Import" title="Import" data-testid="topbar-import-button" on:click={toggleImportPanel}>
@@ -166,20 +160,18 @@
             </button>
           </ButtonGroup.Root>
         {/each}
-        {#if canAddTab}
-          <Button
-            variant="outline"
-            size="xs"
-            iconOnly={true}
-            class="rounded-[6px]"
-            aria-label="New tab"
-            title="New tab"
-            data-testid="new-tab-button"
-            on:click={onAddTab}
-          >
-            <Plus size={12} />
-          </Button>
-        {/if}
+        <Button
+          variant="outline"
+          size="xs"
+          iconOnly={true}
+          class="rounded-[6px]"
+          aria-label="New tab"
+          title="New tab"
+          data-testid="new-tab-button"
+          on:click={onAddTab}
+        >
+          <Plus size={12} />
+        </Button>
       </ButtonGroup.Root>
     {/if}
   </div>
@@ -201,32 +193,8 @@
         >
           <BookOpen size={12} />
         </a>
-        <button
-          class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-none border-0 bg-transparent text-[var(--text-primary)] outline-none transition-[color,background-color,border-color,box-shadow] hover:bg-[var(--panel-bg-alt)] hover:text-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25"
-          data-slot="button"
-          data-variant="ghost"
-          data-size="xs"
-          data-icon-only="true"
-          aria-label="Feedback"
-          title="Feedback"
-          data-testid="topbar-feedback-button"
-          type="button"
-          on:click={onFeedback}
-        >
-          <MessageCircle size={12} />
-        </button>
-        <IconButton
-          aria-label="Share"
-          title="Share"
-          on:click={() => {
-            trackEvent('share_started', { surface: 'topbar' });
-            onShare();
-          }}
-        >
-          <Share2 size={12} />
-        </IconButton>
         <div data-button-group-item>
-          <AccountMenu variant="editor" {onLogin} {onLogout} {onCheckForUpdates} {onOpenSettings} />
+          <AppMenu {onCheckForUpdates} {onOpenSettings} />
         </div>
       </ButtonGroup.Root>
     {/if}

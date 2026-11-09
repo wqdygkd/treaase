@@ -1,7 +1,7 @@
 <script lang="ts">
   import TutorialCodeLink from '$lib/components/tutorials/TutorialCodeLink.svelte';
   import SeoHead from '$lib/components/SeoHead.svelte';
-  import { assetUrl, r2Assets } from '$lib/assets';
+  import { assetUrl, assetPaths } from '$lib/assets';
   import { getRelatedTutorialArticles } from '$lib/content/tutorials';
   import type { TutorialArticle } from '$lib/content/tutorials/types';
   import { serializeJsonLd, siteOrigin } from '$lib/seo/site-seo';
@@ -29,11 +29,11 @@
       name: 'Treease',
       logo: {
         '@type': 'ImageObject',
-        url: assetUrl(r2Assets.treeaseLogo),
+        url: assetUrl(assetPaths.treeaseLogo),
       },
     },
     mainEntityOfPage: articleUrl,
-    image: assetUrl(r2Assets.heroDemoGraphPoster),
+    image: assetUrl(assetPaths.heroDemoGraphPoster),
     articleSection: article.eyebrow,
     isPartOf: {
       '@type': 'CollectionPage',

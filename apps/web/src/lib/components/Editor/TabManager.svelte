@@ -4,12 +4,10 @@
   import type { SupportedEditorLanguageId } from '../../monaco/language-support';
   import type { TempModel } from '../../store/graph-selection-store';
   import type { EditorModelWithDocumentKey, EditorTab, TabSummary } from './types';
-  import { EDITOR_CONFIG } from '../../config/constants';
   import { ensureModelDocumentKey, rotateModelDocumentKey } from './document-key';
   import { createDefaultTabName } from './tab-name';
 
   export let monaco: typeof Monaco;
-  export let maxTabs = EDITOR_CONFIG.maxTabs;
   export let initialLanguageId: SupportedEditorLanguageId;
   export let initialCode: string;
 
@@ -62,8 +60,7 @@
     return firstTab;
   }
 
-  export function addTab(languageId: SupportedEditorLanguageId, text: string): EditorTab | null {
-    if (tabs.length >= maxTabs) return null;
+  export function addTab(languageId: SupportedEditorLanguageId, text: string): EditorTab {
     const tab = createTab(languageId, text);
     tabs = [...tabs, tab];
     syncTabSummaries();

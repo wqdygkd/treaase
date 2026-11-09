@@ -1,19 +1,15 @@
 <script lang="ts">
-  import { assetUrl, r2Assets } from '$lib/assets';
-  import { trackSeoConversion } from '$lib/analytics/ga4';
-  import AccountMenu from './AccountMenu.svelte';
+  import { assetUrl, assetPaths } from '$lib/assets';
 
   export let navItems: Array<{ href: string; label: string }> = [];
   export let ctaHref = '/editor';
   export let ctaLabel = 'Editor';
-  export let onLogin: () => void = () => {};
-  export let onLogout: () => Promise<void> = async () => {};
 </script>
 
 <header class="site-header">
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <a class="brand" href="/" aria-label="Treease home">
-    <img class="brand-logo" src={assetUrl(r2Assets.treeaseLogo)} alt="Treease logo" />
+    <img class="brand-logo" src={assetUrl(assetPaths.treeaseLogo)} alt="Treease logo" />
     <span class="brand-copy">
       <span class="brand-mark">Treease</span>
       <span class="brand-note">Structured text workspace</span>
@@ -27,8 +23,7 @@
   </nav>
 
   <div class="header-actions">
-    <AccountMenu variant="landing" {onLogin} {onLogout} />
-    <a class="header-cta" href={ctaHref} on:click={() => trackSeoConversion('editor_open', { source: 'site_header' })}>{ctaLabel}</a>
+    <a class="header-cta" href={ctaHref}>{ctaLabel}</a>
   </div>
 </header>
 

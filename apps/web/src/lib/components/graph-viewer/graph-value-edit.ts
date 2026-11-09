@@ -11,7 +11,6 @@ import type { TreeNode } from '@core-wasm/index'
 import type { LeaferEditor, LeaferText } from './model';
 import { resolveCellPath } from './graph-anchor-index';
 import { createFreshnessScope } from '../../guards/freshness-scope';
-import { trackEvent } from '../../analytics/ga4';
 
 // These public Leafer event names let this controller stay outside the lazy
 // Leafer runtime chunk; importing the package here defeats GraphRuntimeHost's boundary.
@@ -71,7 +70,6 @@ export type GraphValueEditControllerDeps = {
   }) => void;
   updateActiveTempModel: (updater: (current: any) => any) => void;
   dispatchGraphEditEvent: (type: GraphEditEventType, detail: unknown) => void;
-  runBidirectionalEdit?: <T>(documentKey: string, execute: () => Promise<T>) => Promise<T>;
   handleError: (
     error: unknown,
     context: { component: string; operation: string; metadata?: Record<string, unknown> },
@@ -292,10 +290,7 @@ export function createGraphValueEditController(deps: GraphValueEditControllerDep
     };
 
     try {
-      const applied = deps.runBidirectionalEdit
-        ? await deps.runBidirectionalEdit(deps.getDocumentKey(), apply)
-        : await apply();
-      if (applied) trackEvent('graph_edit', { edit_type: editKind, result: 'success' });
+      const applied = await apply();
       return applied;
     } catch (error) {
       if (error instanceof GraphEditNotAppliedError) return false;

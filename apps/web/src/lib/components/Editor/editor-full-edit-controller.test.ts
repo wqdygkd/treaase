@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockStartDocumentJobForGraph = vi.hoisted(() =>
@@ -1009,7 +1008,7 @@ describe('editor-full-edit-controller', () => {
   it('converts CSV import to the active editor language', async () => {
     const options = createOptions();
     const controller = createEditorFullEditController(options as any);
-    const csvText = readFileSync(new URL('../../../../../../test/fixtures/csv/region_and_currency.csv', import.meta.url), 'utf8');
+    const csvText = 'region,currency\nEurope,EUR\n';
     const file = {
       name: 'region_and_currency.csv',
       size: new TextEncoder().encode(csvText).byteLength,
@@ -1025,24 +1024,6 @@ describe('editor-full-edit-controller', () => {
       options: undefined,
     });
     expect(options.applyImportLanguage).toHaveBeenCalledWith('json');
-  });
-
-  it('meters a converted file import once with its original file sample', async () => {
-    const runBidirectionalEdit = vi.fn(async (_source: string, execute: () => Promise<unknown>) => execute());
-    const options = createOptions({ runBidirectionalEdit });
-    const controller = createEditorFullEditController(options as any);
-    const csvText = 'region,currency\nEurope,EUR\n';
-    const file = {
-      name: 'currencies.csv',
-      size: new TextEncoder().encode(csvText).byteLength,
-      slice: (start?: number, end?: number) => new Blob([csvText.slice(start, end)]),
-      text: vi.fn(async () => csvText),
-    };
-
-    await controller.importStream(file as any, 'csv' as any, 'import-file');
-
-    expect(runBidirectionalEdit).toHaveBeenCalledTimes(1);
-    expect(runBidirectionalEdit).toHaveBeenCalledWith(csvText, expect.any(Function), 'import-file');
   });
 
   it('handles graph rebuild errors from startDocumentJobForGraph', async () => {
@@ -1063,23 +1044,4 @@ describe('editor-full-edit-controller', () => {
     });
   });
 
-  it('meters only graph full-build reasons and passes their source to the quota gate', async () => {
-    const runBidirectionalEdit = vi.fn(async (_source: string, execute: () => Promise<unknown>) => execute());
-    const options = createOptions({ runBidirectionalEdit });
-    const controller = createEditorFullEditController(options as any);
-
-    await controller.runFullEditSessionToTerminal({
-      language: 'json' as any,
-      text: '{ "full": true }',
-      reason: 'whole-document-replacement',
-    });
-    await controller.runFullEditSessionToTerminal({
-      language: 'json' as any,
-      text: '{ "incremental": true }',
-      reason: 'tab-reactivate',
-    });
-
-    expect(runBidirectionalEdit).toHaveBeenCalledTimes(1);
-    expect(runBidirectionalEdit).toHaveBeenCalledWith('{ "full": true }', expect.any(Function), 'whole-document-replacement');
-  });
 });

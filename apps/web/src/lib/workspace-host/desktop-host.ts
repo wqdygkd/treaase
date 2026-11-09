@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   type FileAccessGrant,
-  parseDesktopDeepLinks,
+  parseEditorDeepLinks,
   type WorkspaceHost,
   type WorkspaceCommand,
   type WorkspaceOpenFileOptions,
@@ -79,15 +79,6 @@ export const desktopWorkspaceHost: WorkspaceHost = {
   async onCommand(onCommand) {
     return listen<WorkspaceCommand>('workspace-command', (event) => onCommand(event.payload));
   },
-  async storeRefreshToken(refreshToken) {
-    await invoke('store_refresh_token', { refreshToken });
-  },
-  async hasRefreshToken() {
-    return invoke<boolean>('has_refresh_token');
-  },
-  async refreshSession(supabaseUrl, anonKey) {
-    return invoke<{ accessToken: string; refreshToken: string }>('refresh_access_token', { supabaseUrl, anonKey });
-  },
   async checkForUpdate() {
     pendingUpdate = await check();
     return pendingUpdate ? { version: pendingUpdate.version } : null;
@@ -97,16 +88,13 @@ export const desktopWorkspaceHost: WorkspaceHost = {
     await pendingUpdate.downloadAndInstall();
     pendingUpdate = null;
   },
-  async clearRefreshToken() {
-    await invoke('clear_refresh_token');
-  },
   async openExternal(url: URL) {
     await invoke('open_external_url', { url: url.toString() });
   },
   async getInitialDeepLinks() {
-    return parseDesktopDeepLinks((await getCurrent()) ?? []);
+    return parseEditorDeepLinks((await getCurrent()) ?? []);
   },
   async onDeepLinks(onUrls) {
-    return onOpenUrl((urls) => onUrls(parseDesktopDeepLinks(urls)));
+    return onOpenUrl((urls) => onUrls(parseEditorDeepLinks(urls)));
   },
 };

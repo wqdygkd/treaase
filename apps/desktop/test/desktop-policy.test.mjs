@@ -11,7 +11,7 @@ test('desktop CSP permits only the local bundle, approved service endpoints, and
   assert.match(csp, /script-src 'self'/);
   assert.doesNotMatch(csp, /script-src[^;]*https:/);
   assert.match(csp, /connect-src[^;]*https:\/\/api\.treease\.com/);
-  assert.match(csp, /connect-src[^;]*https:\/\/\*\.supabase\.co/);
+  assert.doesNotMatch(csp, /supabase/i);
   assert.match(csp, /img-src[^;]*https:/);
   assert.match(csp, /frame-src 'none'/);
   assert.match(csp, /worker-src 'self' blob:/);

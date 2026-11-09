@@ -79,11 +79,7 @@ test.setTimeout(60_000);
 
 test("editing a nested trajectory scalar preserves blue string syntax highlighting across the subgraph and graph click", async ({
   page,
-}, testInfo) => {
-  testInfo.annotations.push({
-    type: "allow-browser-error",
-    description: "v1/usage",
-  });
+}) => {
   await page.goto("/editor");
   await waitForEditorReady(page);
   await ensureGraphMode(page);

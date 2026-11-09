@@ -72,7 +72,6 @@
   import { commitEditorTabTextChange } from './editor-tab-edit-commit';
   import { settleWholeDocumentReplacement } from './whole-document-replacement';
   import type { EditorModelWithDocumentKey, EditorTab, TabSummary } from './types';
-  import { EDITOR_CONFIG } from '../../config/constants';
   import { monacoChangesToDocumentTextEdits, type MonacoTextChange } from '../../../shared/document-text-edits';
   import { serializePath } from '../../../shared/document-anchor-utils';
   import { createTreeaseMonacoEditorOptions } from './editor-options';
@@ -82,7 +81,6 @@
   export let onScroll: (payload: { scrollTop: number; scrollLeft: number }) => void = () => {};
   export let enableRevealSync = true;
   export let synchronizedRuntimeLoading = false;
-  export let runBidirectionalEdit: <T>(source: string, execute: () => Promise<T>, reason?: string) => Promise<T> = async (_source, execute) => execute();
 
   type QueuedWholeDocumentReplacement = {
     text: string;
@@ -133,8 +131,6 @@
   let editorRuntimeError = false;
   let editorRuntimePhase = 'Loading editor runtime...';
   let editorRuntimeToken = 0;
-  const LARGE_TEXT_EDIT_USAGE_THRESHOLD_BYTES = 256 * 1024;
-  type EditorUsageRunner = <T>(source: string, execute: () => Promise<T>) => Promise<T>;
   let lastEditorRuntimeStateSignature = '';
   let jsonBlockSelectionValue: JsonBlockSelection | null = null;
   let editorRuntimeOverlay = resolveEditorRuntimeOverlay({
@@ -273,7 +269,6 @@
     'semanticHighlighting.enabled': true,
     readOnly: true,
   };
-  const maxTabs = EDITOR_CONFIG.maxTabs;
   const initialCode = getLanguageExample('json');
 
   let tabManager: TabManager;
@@ -361,7 +356,6 @@
       if (!position) return;
       void editorAnalysisController.updateTreePath(position, { syncGraphHighlight: true });
     },
-    runBidirectionalEdit,
   });
 
   const editorFormatController = createEditorFormatController({
@@ -728,19 +722,12 @@
           changes,
         );
         markActiveTabUserInput(true);
-        const insertedByteLength = changes.reduce(
-          (total, change) => total + new TextEncoder().encode(change.text ?? '').byteLength,
-          0,
-        );
         commitActiveTabEdits(
           activeModel,
           languageIdValue,
           documentKeyValue,
           nextText,
           documentTextEdits,
-          insertedByteLength >= LARGE_TEXT_EDIT_USAGE_THRESHOLD_BYTES
-            ? (source, execute) => runBidirectionalEdit(source, execute, 'whole-document-replacement')
-            : undefined,
         );
       } else {
         commitEditorState();
@@ -831,7 +818,6 @@
     requestDocumentKey: string,
     nextText: string,
     documentTextEdits: DocumentTextEdit[],
-    runUsage: EditorUsageRunner | undefined = undefined,
   ): number {
     return commitEditorTabTextChange({
       requestModel,
@@ -839,7 +825,6 @@
       requestDocumentKey,
       nextText,
       documentTextEdits,
-      runUsage,
       baseSnapshotId: resolveCommitBaseSnapshotId(requestDocumentKey),
       commitRevision: commitEditorState,
       settings: buildDocumentJobSettings({
@@ -1100,13 +1085,9 @@
     if (guardImportInProgress()) return;
     if (!monaco) return;
     const tab = tabManager.addTab(languageIdValue, getLanguageExample(languageIdValue));
-    if (tab) {
-      userInputByTabId.set(tab.id, false);
-      addWorkspaceTabFromEditor({ ...workspacePayloadForTab(tab), savedText: tab.model.getValue() });
-      void setActiveTab(tab);
-      return;
-    }
-    syncTabBindings();
+    userInputByTabId.set(tab.id, false);
+    addWorkspaceTabFromEditor({ ...workspacePayloadForTab(tab), savedText: tab.model.getValue() });
+    void setActiveTab(tab);
   }
 
   export function openDocument(payload: {
@@ -1117,7 +1098,6 @@
   }): string | null {
     if (guardImportInProgress() || !monaco) return null;
     const tab = tabManager.addTab(payload.languageId, payload.text);
-    if (!tab) return null;
     tabManager.setTabName(tab.id, payload.name);
     userInputByTabId.set(tab.id, false);
     addWorkspaceTabFromEditor({
@@ -1605,5 +1585,5 @@
     loading={editorRuntimeOverlay.loading}
     loadingPhase={editorRuntimeOverlay.phase}
   />
-  <TabManager bind:this={tabManager} {monaco} {maxTabs} initialLanguageId={languageIdValue} {initialCode} />
+  <TabManager bind:this={tabManager} {monaco} initialLanguageId={languageIdValue} {initialCode} />
 </div>

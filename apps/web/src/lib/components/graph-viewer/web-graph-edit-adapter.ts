@@ -4,8 +4,8 @@ import {
 } from './graph-value-edit';
 
 /**
- * Web-only boundary for graph edits. It deliberately owns document/revision and
- * entitlement dependencies; the shared canvas runtime never receives them.
+ * Web-only boundary for graph edits. It deliberately owns document/revision
+ * dependencies; the shared canvas runtime never receives them.
  */
 export function createWebGraphEditAdapter(deps: GraphValueEditControllerDeps) {
   const controller = createGraphValueEditController(deps);

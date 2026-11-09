@@ -10,12 +10,6 @@ export function resolveCompileTimeNumber(value: number | undefined, fallback: nu
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-/** Editor configuration. */
-export const EDITOR_CONFIG = {
-  /** Limit open tabs so editor state, worker synchronization, and UI management remain bounded. */
-  maxTabs: 9,
-} as const;
-
 /** Graph rendering configuration. */
 export const GRAPH_CONFIG = {
   /** Estimate average character width from a stable character set for node truncation, column widths, and initial layout. */

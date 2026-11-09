@@ -1,7 +1,7 @@
-import { assetUrl, r2Assets } from '$lib/assets';
+import { assetUrl, assetPaths } from '$lib/assets';
 
 export const siteOrigin = 'https://treease.com';
-export const defaultSocialImage = assetUrl(r2Assets.heroDemoGraphPoster);
+export const defaultSocialImage = assetUrl(assetPaths.heroDemoGraphPoster);
 
 export const socialLinks = {
   github: 'https://github.com/loggerhead/treease',

@@ -9,12 +9,6 @@
   import BottomBar from '../../lib/components/BottomBar.svelte';
   import ViewportPanel from '../../lib/components/ViewportPanel.svelte';
   import SettingsDialog from '../../lib/components/SettingsDialog.svelte';
-  import ShareDialog from '../../lib/components/ShareDialog.svelte';
-  import FeedbackDialog from '../../lib/components/FeedbackDialog.svelte';
-  import StructGenerationInput from '../../lib/components/StructGenerationInput.svelte';
-  import LoginDialog from '../../lib/components/LoginDialog.svelte';
-  import AiInput from '../../lib/components/AiInput.svelte';
-  import type { PricingUsageNotice } from '../../lib/components/PricingPlanGrid.svelte';
   import YqExpressionInput from '../../lib/components/YqExpressionInput.svelte';
   import { settings, settingsStore } from '../../lib/settings/settings-store';
   import { DEFAULT_EDITOR_SPLIT_RATIO } from '../../lib/settings/editor-layout-state';
@@ -35,7 +29,6 @@
   import { callSharedWasmWorker, getSharedWasmWorkerClient } from '../../lib/wasm/wasm-worker-singleton';
   import { getDefaultWasmURL } from '../../lib/wasm/wasm-worker-singleton';
   import { runYqPreview } from './yq-preview-controller';
-  import { prepareStructGenerationSource } from './struct-generation-controller';
   import {
     canExecuteUrlCommandForLanguage,
     resolveEditorUrlPreset,
@@ -60,8 +53,7 @@
   import { importFormatOptions, supportedEditorLanguageSet, editorLanguageFallback, findSupportedLanguageByExtension, type SupportedEditorLanguageId } from '../../lib/monaco/language-support';
   import { computeSynchronizedRuntimeLoading, type RuntimeStateEventDetail } from '../../lib/runtime-loading';
   import { getActiveDocumentText } from '../../lib/store/active-document-authority';
-  import { breadcrumbTargetForPath, isPathSegIndex, pathSegKeyValue, type PathSeg } from '../../lib/store/tree-path';
-  import { PathSegTag } from '@core-wasm/index';
+  import { breadcrumbTargetForPath, type PathSeg } from '../../lib/store/tree-path';
   import { markPreviewCompleted, markPreviewRequested } from '../../lib/test-bridge/runtime-readiness';
   import { setTreeaseUrlPresetState } from '../../lib/test-bridge/window-treease';
   import type { DiffPlan } from '../../lib/graph/diff-plan';
@@ -78,28 +70,10 @@
   } from 'lucide-svelte';
   import * as ButtonGroup from '../../lib/components/ui/button-group';
   import { IconButton } from '../../lib/components/ui/button';
-  import { trackEvent } from '../../lib/analytics/ga4';
-  import { startBillingCheckout } from '../../lib/billing/checkout-flow';
-  import { getUsageClientId } from '../../lib/billing/client-id';
-  import { runPostpaidCapability } from '../../lib/billing/entitlement-gate';
   import { workspaceHost } from '../../lib/workspace-host';
-  import { exchangeAuthCode, signOut } from '../../lib/auth/supabase-auth';
   import { editorWorkspace, getWorkspaceState, updateWorkspaceTab } from '../../lib/store/workspace-store';
   import { isWorkspaceTabDirty, type EditorWorkspaceTabSummary } from '../../lib/store/editor-workspace';
-  import { clearCompareState, compareState } from '../../lib/store/compare-state';
-  import {
-    generateStruct,
-    getUsageSummary,
-    getPublicShare,
-    suggestYq,
-    TreeaseServerError,
-    type StructLanguage,
-  } from '../../lib/services/treease-server';
-  import { createShareResource as createResourceFromState, type ShareInteraction, type SharePathSegment, type ShareResource } from '../../lib/share/share-resource';
-  import { restoreShareResource } from '../../lib/share/share-restore';
   import type { WorkspaceCommand, WorkspaceSession } from '../../lib/workspace-host';
-
-  const LARGE_FILE_PROCESSING_THRESHOLD_BYTES = 256 * 1024;
 
   let editorRef: Editor | null = null;
   let topBarRef: TopBar | null = null;
@@ -126,30 +100,11 @@
   let isDraggingSplitter = false;
   let splitterDragRect: DOMRect | null = null;
   let settingsOpen = false;
-  let shareOpen = false;
-  let feedbackOpen = false;
-  let structGenerationOpen = false;
-  let structGenerationTarget: StructLanguage = 'typescript';
-  let structGenerationRootName = 'Root';
-  let structGenerationBusy = false;
-  let structGenerationError = '';
-  let loginOpen = false;
   let viewerViewMode: 'graph' | 'text' = 'graph';
   let editorRuntimeLoading = true;
   let viewerRuntimeLoading = true;
   let synchronizedRuntimeLoading = true;
   let syncScrollEnabled = true;
-  let aiInputOpen = false;
-  let aiInstruction = '';
-  let aiBusy = false;
-  let aiError = '';
-  let aiSuccess = '';
-  let aiQuotaExhausted = false;
-  let aiUpgradeBusy = false;
-  type PricingPlanGridComponent = typeof import('../../lib/components/PricingPlanGrid.svelte').default;
-  let pricingPlanGridComponent: PricingPlanGridComponent | null = null;
-  let pricingPlanGridLoad: Promise<PricingPlanGridComponent> | null = null;
-  let aiUsageNotice: PricingUsageNotice | null = null;
   let yqInputOpen = false;
   let yqExpression = '';
   let yqBusy = false;
@@ -166,10 +121,6 @@
   let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let sessionRestoring = false;
   let lastMirroredViewerText = '';
-  let lastTrackedGraphViewRevision = -1;
-  let shareLoadError = '';
-  let shareLoading = false;
-  const maxTabs = 9;
   const wasmUrl = getDefaultWasmURL();
   type ScrollPosition = { scrollTop: number; scrollLeft: number };
   type ScrollSyncOwner = 'editor' | 'viewer';
@@ -323,83 +274,10 @@
     }
   }
 
-  async function restoreShare(shareID: string): Promise<void> {
-    shareLoading = true;
-    shareLoadError = '';
-    try {
-      const { resource } = await getPublicShare(shareID);
-      await tick();
-      if (!editorRef || !viewerRef) throw new Error('Editor is not ready.');
-      await restoreShareResource(resource, {
-        editor: editorRef,
-        viewer: viewerRef,
-        setViewMode: (mode) => { viewerViewMode = mode; },
-        clearCompareState,
-        restoreTreePath: (path) => {
-          activeTempModel.update((current) => ({ ...current, treePath: fromSharePath(path) }));
-          return true;
-        },
-        restoreGraphFocus: (path, target) => {
-          const localPath = fromSharePath(path);
-          return viewerRef?.revealPath(localPath, { target }) ?? Promise.resolve(false);
-        },
-        waitForGraphReady: () => viewerRef?.waitForGraphReady() ?? Promise.resolve(false),
-        rebuildSubgraphWorkspace: async (panePaths) => await viewerRef.restoreSubgraphWorkspacePaths(panePaths.map(fromSharePath)),
-        reportNavigationWarning: () => toast.warning('The shared document opened, but part of its saved navigation could not be restored.'),
-      });
-    } catch (error) {
-      shareLoadError = error instanceof Error ? error.message : 'Unable to load shared content.';
-      clearCompareState();
-    } finally {
-      shareLoading = false;
-    }
-  }
-
-  async function createShareResource(): Promise<ShareResource> {
-    if (!editorRef) throw new Error('The editor is not ready yet.');
-    const left = { text: editorRef.getActiveText() ?? '', languageId: editorRef.getActiveLanguage() ?? $languageIdStore };
-    const rightText = viewerRef?.getActiveText();
-    const rightLanguage = viewerRef?.getActiveLanguage();
-    const treePath = toSharePath(get(activeTempModel).treePath);
-    const graphHighlight = get(activeTempModel).graphHighlight;
-    const selection = editorRef.getSelection();
-    const interaction: ShareInteraction = {
-      treePath,
-      focus: graphHighlight && selection
-        ? { type: 'graph', path: toSharePath(graphHighlight.path), target: graphHighlight.target, editorSelection: selection }
-        : selection ? { type: 'editor', selection } : null,
-      subgraphWorkspace: { panePaths: viewerRef?.getSubgraphWorkspacePaths().map(toSharePath) ?? [] },
-    };
-    return createResourceFromState({
-      compareKind: $compareState.kind,
-      left,
-      right: viewerViewMode !== 'text' || rightText === undefined || !rightLanguage ? null : { text: rightText, languageId: rightLanguage },
-      layout: { viewMode: viewerViewMode, activePane: 'left' },
-      viewport: { left: editorRef.getViewportAnchor() ?? { topLine: 1, scrollLeft: 0 }, right: viewerRef?.getViewportAnchor() ?? { topLine: 1, scrollLeft: 0 } },
-      interaction,
-    });
-  }
-
-  function toSharePath(path: PathSeg[]): SharePathSegment[] {
-    return path.map((segment) => isPathSegIndex(segment)
-      ? { type: 'index' as const, index: segment.index }
-      : { type: 'key' as const, key: pathSegKeyValue(segment) });
-  }
-
-  function fromSharePath(path: SharePathSegment[]): PathSeg[] {
-    return path.map((segment) => segment.type === 'index'
-      ? { tag: PathSegTag.INDEX, index: segment.index }
-      : { tag: PathSegTag.KEY, key: segment.key, index: 0 }) as PathSeg[];
-  }
-
   if (typeof window !== 'undefined') {
     urlPreset = resolveEditorUrlPreset(window.location.search);
-    if (urlPreset.shareID.present && urlPreset.shareID.valid) shareLoading = true;
-    if (urlPreset.shareID.present && !urlPreset.shareID.valid) shareLoadError = 'The share link contains an invalid share ID.';
-    if (!urlPreset.shareID.present) {
-      applyUrlPresetUi(urlPreset);
-      setUrlPresetBridgeState(urlPreset);
-    }
+    applyUrlPresetUi(urlPreset);
+    setUrlPresetBridgeState(urlPreset);
   }
 
   function getContainerWidth() {
@@ -458,10 +336,6 @@
 
   function handleViewerRuntimeState(payload: RuntimeStateEventDetail) {
     viewerRuntimeLoading = payload.loading;
-    if (!payload.loading && !payload.error && viewerViewMode === 'graph' && $editorRevision !== lastTrackedGraphViewRevision) {
-      lastTrackedGraphViewRevision = $editorRevision;
-      trackEvent('graph_view', { language: editorRef?.getActiveLanguage() ?? $languageIdStore });
-    }
   }
 
   $: runtimeGateViewMode = showViewerPane ? viewerViewMode : 'text';
@@ -495,7 +369,6 @@
     targetFormat: string;
     fileName: string;
   }) {
-    const largeFileOperationId = crypto.randomUUID();
     try {
       const sample = await readImportSourceSample(payload.file);
       const effectiveSource = await resolveImportSourceFormat(
@@ -508,48 +381,13 @@
         supportedEditorLanguageSet.has(effectiveSource as SupportedEditorLanguageId)
           ? (effectiveSource as SupportedEditorLanguageId)
           : (payload.targetFormat as SupportedEditorLanguageId);
-      const importFile = () => editorRef?.importStream(payload.file, effectiveSource, targetFormat);
-      if (payload.file.size >= LARGE_FILE_PROCESSING_THRESHOLD_BYTES) {
-        await runPostpaidCapability({
-          capability: 'large_file_processing',
-          idempotencyKey: largeFileOperationId,
-          metadata: { byteLength: payload.file.size },
-          surface: 'file_import',
-          execute: importFile,
-          onBlocked: (block) => viewerRef?.showEntitlementOverlay(block),
-        });
-      } else {
-        await importFile();
-      }
-      trackEvent('document_import', { source: 'file', language: targetFormat, result: 'success' });
+      await editorRef?.importStream(payload.file, effectiveSource, targetFormat);
       toast.success(`Imported ${payload.fileName}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[import] file import failed', { fileName: payload.fileName, error: message });
-      trackEvent('document_import', { source: 'file', result: 'failure' });
       toast.error(`Import failed: ${message}`);
     }
-  }
-
-  async function runEditorFullEditUsage<T>(
-    source: string,
-    execute: () => Promise<T>,
-    reason = '',
-  ): Promise<T> {
-    // File imports already reserve large-file usage in handleImportFileStream.
-    if (reason === 'import-file' || reason === 'drop-file') return execute();
-    const byteLength = new TextEncoder().encode(source).byteLength;
-    const capability = byteLength >= LARGE_FILE_PROCESSING_THRESHOLD_BYTES
-      ? 'large_file_processing'
-      : 'bidirectional_edit';
-    return runPostpaidCapability({
-      capability,
-      idempotencyKey: crypto.randomUUID(),
-      metadata: { byteLength, surface: 'editor_full_edit' },
-      surface: 'graph_edit',
-      execute,
-      onBlocked: (block) => viewerRef?.showEntitlementOverlay(block),
-    });
   }
 
   async function handleRequestImportFile(payload: { sourceFormat: string; targetFormat: string; accept: string[] }) {
@@ -586,10 +424,7 @@
       languageId,
       fileLinkedDocument: file.fileAccessGrant ? { grantId: file.fileAccessGrant.id, name: file.fileAccessGrant.name } : undefined,
     });
-    if (!tabId) {
-      toast.error('Cannot open another document while all tabs are in use.');
-      return;
-    }
+    if (!tabId) return;
     if (file.fileAccessGrant) {
       await watchFileForExternalChanges(tabId, file.fileAccessGrant);
     }
@@ -699,7 +534,6 @@
       formatOptions,
     });
     await showViewerTextPreviewForRevision(text, preview.previewLanguage, $editorRevision);
-    trackEvent('document_export', { source: 'preview', format, result: 'success' });
     toast.success(preview.toastMessage);
   }
 
@@ -723,128 +557,12 @@
       toast.error(`Export failed: ${message}`);
       return;
     }
-    trackEvent('document_export', { source: 'download', format, result: 'success' });
     for (const message of download.toastMessages) {
       toast.success(message);
     }
   }
 
-  function handleShowAiInput() {
-    structGenerationOpen = false;
-    yqInputOpen = false;
-    aiInputOpen = true;
-    aiError = '';
-    aiSuccess = '';
-    aiQuotaExhausted = false;
-    aiUsageNotice = null;
-  }
-
-  async function ensurePricingPlanGrid(): Promise<PricingPlanGridComponent> {
-    if (pricingPlanGridComponent) return pricingPlanGridComponent;
-    pricingPlanGridLoad ??= import('../../lib/components/PricingPlanGrid.svelte').then((module) => module.default);
-    pricingPlanGridComponent = await pricingPlanGridLoad;
-    return pricingPlanGridComponent;
-  }
-
-  async function openPricingOverlay(): Promise<void> {
-    if (!aiUsageNotice) await refreshAiUsageNotice();
-    await ensurePricingPlanGrid();
-    viewerRef?.showPricingOverlay(aiUsageNotice);
-  }
-
-  function handleEntitlementBlocked(): void {
-    void ensurePricingPlanGrid();
-  }
-
-  function handleCloseAiInput() {
-    if (aiBusy) return;
-    aiInputOpen = false;
-    aiError = '';
-    aiSuccess = '';
-    aiQuotaExhausted = false;
-  }
-
-  async function handleSubmitAi(instruction: string) {
-    const sourceText = getActiveDocumentText();
-    aiInstruction = instruction;
-    aiBusy = true;
-    aiError = '';
-    aiSuccess = '';
-    aiQuotaExhausted = false;
-    if (!sourceText.trim()) {
-      aiError = 'The active document is empty.';
-      aiBusy = false;
-      return;
-    }
-
-    try {
-      const currentPath = get(activeTempModel).treePath;
-      const suggestion = await suggestYq({
-        instruction,
-        editorTextSnapshot: sourceText,
-        treePathSet: currentPath.length ? [serializePath(currentPath)] : undefined,
-      });
-      const result = await runYqPreview({
-        expression: suggestion.expression,
-        text: sourceText,
-        language: editorRef?.getActiveLanguage() ?? $languageIdStore,
-        formatting: $settings.formatting,
-        enableNest: $settings.parser.enableNest,
-        callWorker: callSharedWasmWorker,
-      });
-      if ('error' in result) {
-        aiError = result.error;
-        return;
-      }
-      await showViewerTextPreviewForRevision(result.result, result.previewLanguage, $editorRevision);
-      aiSuccess = suggestion.expression;
-    } catch (error) {
-      if (error instanceof TreeaseServerError && error.code === 'quota_exhausted') {
-        aiQuotaExhausted = true;
-        aiError = error.message;
-        void (async () => {
-          await refreshAiUsageNotice();
-          await openPricingOverlay();
-        })();
-      } else {
-        aiError = error instanceof Error ? error.message : 'Unable to generate a yq expression.';
-      }
-    } finally {
-      aiBusy = false;
-    }
-  }
-
-  async function refreshAiUsageNotice(): Promise<void> {
-    try {
-      const summary = await getUsageSummary(await getUsageClientId());
-      const limit = summary.limits.aiProcessingMonthly;
-      if (limit.kind !== 'limited') return;
-      aiUsageNotice = {
-        capability: 'AI processing',
-        used: summary.usage.ai_suggestion ?? 0,
-        limit: limit.limit,
-        periodLabel: 'this month',
-      };
-    } catch {
-      // The quota response still explains the block if a follow-up usage read fails.
-    }
-  }
-
-  async function handleAiQuotaUpgrade(priceId: 'monthly' | 'yearly' = 'monthly'): Promise<void> {
-    if (aiUpgradeBusy) return;
-    aiUpgradeBusy = true;
-    try {
-      const outcome = await startBillingCheckout(priceId, { successUrl: window.location.href });
-      if (outcome.status === 'login-required') loginOpen = true;
-      if (outcome.status === 'failed') toast.error(outcome.message);
-    } finally {
-      aiUpgradeBusy = false;
-    }
-  }
-
   function handleShowYqInput() {
-    structGenerationOpen = false;
-    aiInputOpen = false;
     yqInputOpen = true;
     yqError = '';
     void tick().then(() => {
@@ -855,55 +573,6 @@
   function handleCloseYqInput() {
     yqInputOpen = false;
     yqError = '';
-  }
-
-  function handleShowStructGeneration(): void {
-    aiInputOpen = false;
-    yqInputOpen = false;
-    structGenerationError = '';
-    structGenerationOpen = true;
-  }
-
-  function handleCloseStructGeneration(): void {
-    if (structGenerationBusy) return;
-    structGenerationOpen = false;
-    structGenerationError = '';
-  }
-
-  // The right pane's document runtime currently accepts Treease structured languages only.
-  // Keep generated code visible while using the closest lexical mode until code-only languages are supported.
-  function rightEditorLanguageForStruct(language: StructLanguage): SupportedEditorLanguageId {
-    return language === 'python' ? 'python' : 'javascript';
-  }
-
-  async function handleSubmitStructGeneration(): Promise<void> {
-    const sourceText = getActiveDocumentText() || editorRef?.getActiveText() || '';
-    const sourceLanguage = editorRef?.getActiveLanguage() ?? $languageIdStore;
-    if (!sourceText.trim()) {
-      structGenerationError = 'The active document is empty.';
-      return;
-    }
-
-    structGenerationBusy = true;
-    structGenerationError = '';
-    try {
-      const sourceJson = await prepareStructGenerationSource({
-        text: sourceText,
-        language: sourceLanguage,
-        formatting: $settings.formatting,
-        callWorker: callSharedWasmWorker,
-      });
-      const result = await generateStruct({
-        sourceJson,
-        targetLanguage: structGenerationTarget,
-        rootName: structGenerationRootName.trim() || 'Root',
-      });
-      await showViewerTextPreview(result.code, rightEditorLanguageForStruct(result.language));
-    } catch (error) {
-      structGenerationError = error instanceof Error ? error.message : 'Unable to generate the structure definition.';
-    } finally {
-      structGenerationBusy = false;
-    }
   }
 
   async function handleSubmitYq(expression: string) {
@@ -1156,30 +825,7 @@
         }
         urlPreset = nextPreset;
         await applyEditorUrlPreset(nextPreset);
-        continue;
       }
-      if (url.hostname === 'auth' && url.pathname === '/callback') {
-        const code = url.searchParams.get('code');
-        if (!code) {
-          toast.error('Login callback did not include an authorization code.');
-          continue;
-        }
-        const session = await exchangeAuthCode(code);
-        if (!session?.refresh_token) throw new Error('Login did not return a refresh token.');
-        await (await workspaceHost).storeRefreshToken(session.refresh_token);
-        loginOpen = false;
-        toast.success('You are now logged in.');
-      }
-    }
-  }
-
-  async function handleLogout(): Promise<void> {
-    try {
-      await signOut();
-      toast.success('You are now logged out.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(`Logout failed: ${message}`);
     }
   }
 
@@ -1258,14 +904,12 @@
 
   onMount(() => {
     urlPreset ??= resolveEditorUrlPreset(window.location.search);
-    const shareID = urlPreset.shareID;
     let stopWorkspaceSession: (() => void) | null = null;
     let stopWorkspaceCommands: (() => void) | null = null;
     let stopDeepLinks: (() => void) | null = null;
     void (async () => {
       const host = await workspaceHost;
       showTabDirty = host.surface === 'desktop';
-      if (shareID.present) return;
       if (host.surface === 'desktop') {
         const session = await host.loadSession();
         if (session) await restoreWorkspaceSession(session);
@@ -1291,11 +935,7 @@
       }
       layoutReady = true;
       await tick();
-      if (shareID.present) {
-        if (shareID.valid && shareID.value) await restoreShare(shareID.value);
-      } else {
-        await applyEditorUrlPreset(urlPreset);
-      }
+      await applyEditorUrlPreset(urlPreset);
     })().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.error('[editor] failed to initialize settings and layout', { error: message });
@@ -1341,13 +981,6 @@
 
 <main class="grid h-screen w-screen bg-[var(--app-bg)] text-[var(--text-primary)]">
   <h1 class="sr-only">Treease editor</h1>
-  {#if shareLoadError}
-    <section class="m-auto max-w-md rounded-[18px] border border-[var(--border-muted)] bg-white p-8 text-center shadow-sm" data-testid="share-load-error" role="alert" aria-live="assertive">
-      <h1 class="text-xl font-semibold">Unable to open share link</h1>
-      <p class="mt-2 text-sm text-[var(--text-muted)]">{shareLoadError}</p>
-      <a class="mt-6 inline-flex rounded-[9px] bg-[var(--accent)] px-4 py-2 text-sm text-white" href="/editor" data-sveltekit-reload>Open a blank editor</a>
-    </section>
-  {:else}
   <div class="grid h-full min-h-0 min-w-0 overflow-hidden" style:grid-template-rows={shellRowsClass}>
     {#if showTopBar}
       <TopBar
@@ -1355,7 +988,6 @@
         tabs={tabSummaries}
         {showTabDirty}
         {activeTabId}
-        canAddTab={tabSummaries.length < maxTabs}
         showTabs={true}
         showRightActions={true}
         {formatOptions}
@@ -1366,10 +998,6 @@
         onImportFileStream={handleImportFileStream}
         onExportPreview={handleExportPreview}
         onExportDownload={handleExportDownload}
-        onShare={() => (shareOpen = true)}
-        onFeedback={() => (feedbackOpen = true)}
-        onLogin={() => (loginOpen = true)}
-        onLogout={handleLogout}
         onCheckForUpdates={handleCheckForUpdates}
         onOpenSettings={() => (settingsOpen = true)}
       />
@@ -1392,31 +1020,12 @@
               bind:activeTabId
               enableRevealSync={syncScrollEnabled}
               {synchronizedRuntimeLoading}
-              runBidirectionalEdit={runEditorFullEditUsage}
               on:reveal={handleEditorReveal}
               on:runtime-state={handleEditorRuntimeEvent}
               onScroll={handleEditorScroll}
             />
           </div>
-          {#if aiInputOpen}
-            <AiInput
-              value={aiInstruction}
-              busy={aiBusy}
-              error={aiError}
-              success={aiSuccess}
-              quotaExhausted={aiQuotaExhausted}
-              upgradeBusy={aiUpgradeBusy}
-              onChange={(value) => {
-                aiInstruction = value;
-                aiError = '';
-                aiSuccess = '';
-                aiQuotaExhausted = false;
-              }}
-              onSubmit={handleSubmitAi}
-              onUpgrade={() => void openPricingOverlay()}
-              onClose={handleCloseAiInput}
-            />
-          {:else if yqInputOpen}
+          {#if yqInputOpen}
             <YqExpressionInput
               bind:this={yqInputRef}
               value={yqExpression}
@@ -1428,17 +1037,6 @@
               }}
               onSubmit={handleSubmitYq}
               onClose={handleCloseYqInput}
-            />
-          {:else if structGenerationOpen}
-            <StructGenerationInput
-              targetLanguage={structGenerationTarget}
-              rootName={structGenerationRootName}
-              busy={structGenerationBusy}
-              error={structGenerationError}
-              onChangeTargetLanguage={(value) => (structGenerationTarget = value)}
-              onChangeRootName={(value) => (structGenerationRootName = value)}
-              onSubmit={handleSubmitStructGeneration}
-              onClose={handleCloseStructGeneration}
             />
           {/if}
         </section>
@@ -1532,12 +1130,6 @@
             onTextScroll={handleViewerScroll}
             onApplyDiff={handleApplyDiff}
             onSwap={handleSwapEditors}
-            {pricingPlanGridComponent}
-            pricingUsageNotice={null}
-            onPricingSelectPlan={(priceId) => void handleAiQuotaUpgrade(priceId)}
-            pricingActionDisabled={() => aiUpgradeBusy}
-            pricingActionLabel={(plan) => aiUpgradeBusy ? 'Opening checkout…' : plan.ctaLabel}
-            onEntitlementBlocked={handleEntitlementBlocked}
           />
         </section>
       {/if}
@@ -1580,9 +1172,7 @@
         onMinify={() => editorRef?.minifyActive()}
         onCompact={() => editorRef?.compactActive()}
         onSort={() => editorRef?.sortActive()}
-        onShowAiInput={handleShowAiInput}
         onShowYqInput={handleShowYqInput}
-        onGenerateStruct={handleShowStructGeneration}
         onEscape={() => editorRef?.escapeActive()}
         onUnescape={() => editorRef?.unescapeActive()}
         onNewDocument={workspaceCommands['workspace:new']}
@@ -1594,13 +1184,6 @@
       />
     {/if}
   </div>
-  <FeedbackDialog bind:open={feedbackOpen} />
-  {#if shareLoading}
-    <div class="fixed inset-0 z-50 grid place-items-center bg-[var(--app-bg)]" data-testid="share-loading" aria-live="polite">
-      <span class="text-sm text-[var(--text-muted)]">Restoring shared content…</span>
-    </div>
-  {/if}
-  {/if}
 </main>
 {#if externalFileConflict}
   <div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-6" role="presentation">
@@ -1623,7 +1206,6 @@
       bind:activeTabId
       enableRevealSync={syncScrollEnabled}
       {synchronizedRuntimeLoading}
-      runBidirectionalEdit={runEditorFullEditUsage}
       on:reveal={handleEditorReveal}
       on:runtime-state={handleEditorRuntimeEvent}
       onScroll={handleEditorScroll}
@@ -1631,5 +1213,3 @@
   </div>
 {/if}
 <SettingsDialog bind:open={settingsOpen} />
-<ShareDialog bind:open={shareOpen} createResource={createShareResource} />
-<LoginDialog bind:open={loginOpen} />

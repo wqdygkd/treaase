@@ -10,7 +10,6 @@ use std::{
     },
 };
 
-use keyring::Entry;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -23,15 +22,7 @@ use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 const RECENT_FILES_FILENAME: &str = "desktop-recent-files.json";
 const WORKSPACE_SESSION_FILENAME: &str = "desktop-workspace-session.json";
-const KEYRING_SERVICE: &str = "com.treease.desktop";
-const KEYRING_REFRESH_TOKEN_ACCOUNT: &str = "supabase-refresh-token";
 const OPEN_RECENT_MENU_PREFIX: &str = "workspace:open-recent:";
-
-#[derive(Deserialize)]
-struct RefreshTokenResponse {
-    access_token: String,
-    refresh_token: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -240,97 +231,6 @@ fn file_name(path: &Path) -> Result<String, String> {
         .and_then(|value| value.to_str())
         .map(str::to_owned)
         .ok_or_else(|| "The selected file needs a valid name.".to_owned())
-}
-
-fn refresh_token_entry() -> Result<Entry, String> {
-    Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_TOKEN_ACCOUNT)
-        .map_err(|error| format!("Cannot access the system credential store: {error}"))
-}
-
-#[tauri::command]
-async fn store_refresh_token(refresh_token: String) -> Result<(), String> {
-    if refresh_token.trim().is_empty() {
-        return Err("A refresh token is required.".into());
-    }
-    refresh_token_entry()?
-        .set_password(&refresh_token)
-        .map_err(|error| {
-            format!("Cannot save the refresh token in the system credential store: {error}")
-        })
-}
-
-#[tauri::command]
-async fn has_refresh_token() -> Result<bool, String> {
-    match refresh_token_entry()?.get_password() {
-        Ok(_) => Ok(true),
-        Err(keyring::Error::NoEntry) => Ok(false),
-        Err(error) => Err(format!("Cannot read the system credential store: {error}")),
-    }
-}
-
-#[tauri::command]
-async fn clear_refresh_token() -> Result<(), String> {
-    match refresh_token_entry()?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(format!(
-            "Cannot remove the refresh token from the system credential store: {error}"
-        )),
-    }
-}
-
-fn supabase_refresh_endpoint(supabase_url: &str) -> Result<String, String> {
-    let base = supabase_url
-        .parse::<tauri::Url>()
-        .map_err(|_| "The configured Supabase URL is invalid.".to_owned())?;
-    let allowed_host = base
-        .host_str()
-        .is_some_and(|host| host.ends_with(".supabase.co"));
-    if base.scheme() != "https" || !allowed_host || !matches!(base.path(), "" | "/") {
-        return Err("The configured Supabase URL is not an approved HTTPS endpoint.".into());
-    }
-    Ok(format!(
-        "{}/auth/v1/token?grant_type=refresh_token",
-        base.origin().ascii_serialization()
-    ))
-}
-
-#[tauri::command]
-async fn refresh_access_token(
-    supabase_url: String,
-    anon_key: String,
-) -> Result<serde_json::Value, String> {
-    let endpoint = supabase_refresh_endpoint(&supabase_url)?;
-    if anon_key.trim().is_empty() {
-        return Err("The Supabase anonymous key is required.".into());
-    }
-    let refresh_token = refresh_token_entry()?
-        .get_password()
-        .map_err(|error| format!("Cannot read the system credential store: {error}"))?;
-    let response = reqwest::Client::new()
-        .post(endpoint)
-        .header("apikey", &anon_key)
-        .header("authorization", format!("Bearer {anon_key}"))
-        .json(&serde_json::json!({ "refresh_token": refresh_token }))
-        .send()
-        .await
-        .map_err(|_| "Cannot reach the configured Supabase service.".to_owned())?;
-    if !response.status().is_success() {
-        return Err("The stored desktop session is no longer valid.".into());
-    }
-    let tokens = response
-        .json::<RefreshTokenResponse>()
-        .await
-        .map_err(|_| "The Supabase refresh response was invalid.".to_owned())?;
-    if tokens.access_token.is_empty() || tokens.refresh_token.is_empty() {
-        return Err("The Supabase refresh response was incomplete.".into());
-    }
-    refresh_token_entry()?
-        .set_password(&tokens.refresh_token)
-        .map_err(|error| format!("Cannot update the system credential store: {error}"))?;
-    Ok(serde_json::json!({
-        "accessToken": tokens.access_token,
-        "refreshToken": tokens.refresh_token,
-    }))
 }
 
 #[tauri::command]
@@ -659,10 +559,6 @@ fn run() -> Result<(), tauri::Error> {
             save_workspace_session,
             load_workspace_session,
             open_external_url,
-            store_refresh_token,
-            has_refresh_token,
-            clear_refresh_token,
-            refresh_access_token,
         ])
         .setup(|app| {
             load_recent_files(app.handle(), &app.state::<FileAccessState>())
@@ -722,8 +618,8 @@ fn run() -> Result<(), tauri::Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        open_explicit_paths, read_json_if_present, supabase_refresh_endpoint,
-        validate_workspace_session, write_json_atomically_at, FileAccessState,
+        open_explicit_paths, read_json_if_present, validate_workspace_session,
+        write_json_atomically_at, FileAccessState,
     };
     use std::{
         fs,
@@ -834,14 +730,4 @@ mod tests {
         fs::remove_dir_all(directory).expect("remove session directory");
     }
 
-    #[test]
-    fn refreshes_only_the_configured_supabase_origin() {
-        assert_eq!(
-            supabase_refresh_endpoint("https://project.supabase.co"),
-            Ok("https://project.supabase.co/auth/v1/token?grant_type=refresh_token".into())
-        );
-        assert!(supabase_refresh_endpoint("https://example.com").is_err());
-        assert!(supabase_refresh_endpoint("http://project.supabase.co").is_err());
-        assert!(supabase_refresh_endpoint("https://project.supabase.co/other").is_err());
-    }
 }

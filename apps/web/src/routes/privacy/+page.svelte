@@ -5,7 +5,7 @@
 
 <LegalPage
   title="Privacy Policy"
-  description="Read Treease's privacy policy for information about data collection, account use, security, analytics, and your privacy rights."
+  description="Read Treease's privacy policy for information about data collection, security, analytics, and your privacy rights."
   html={source}
   canonicalUrl="https://treease.com/privacy"
 />
